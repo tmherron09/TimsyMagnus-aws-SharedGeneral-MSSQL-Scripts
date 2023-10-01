@@ -1,0 +1,63 @@
+USE SharedUser;
+
+-- Create Temporal/System Versioned Table to store User Login Authentication items.
+
+/********************
+Script for Create [SharedUser].[dbo].[UserAuth] Table
+
+- Temporal/System Versioned
+- Stores HashedPasswords for Authentication/Verification in Auth/JwT Services.
+- Create Roles:
+	- UserAuthInsert	SELECT,INSERT, UPDATE
+	- UserAuthVerify	SELECT
+- Create Logins:
+	- UserAuthLambda
+	- UserAuthVerifyLambda
+
+- Create Users:
+	- UserAuthLambdaClient			WITH ROLE UserAuthVerify
+	- UserAuthInsertLambdaClient	WITH ROLE UserAuthInsert
+
+- Indexed on:
+	- Username
+	- Email
+
+********************/
+
+CREATE TABLE dbo.UserAuth
+(
+    UserAuthId INT IDENTITY(1,1) PRIMARY KEY,
+    Username NVARCHAR(50) NOT NULL UNIQUE,
+    Email NVARCHAR(255) NOT NULL UNIQUE,
+    HashedPassword VARBINARY(MAX) NOT NULL,
+    CreatedDate DATETIME2 DEFAULT SYSDATETIME() NOT NULL,
+	UpdateDate DATETIME2,
+
+	-- Add Temporal Table.
+	StartDate datetime2 GENERATED ALWAYS AS ROW START NOT NULL,
+    EndDate datetime2 GENERATED ALWAYS AS ROW END NOT NULL,
+    PERIOD FOR SYSTEM_TIME (StartDate, EndDate)
+)
+WITH (SYSTEM_VERSIONING = ON (HISTORY_TABLE = dbo.UserAuthHistory));
+
+-- Create indexes for performance optimization
+CREATE INDEX IX_Username ON UserAuth (Username);
+CREATE INDEX IX_Email ON UserAuth (Email);
+
+-- Create a roles for data access control
+CREATE ROLE UserAuthInsert;
+GRANT SELECT, INSERT, UPDATE ON UserAuth TO UserAuthInsert;
+
+CREATE ROLE UserAuthVerify;
+GRANT SELECT ON UserAuth TO UserAuthVerify;
+
+-- Create a login for application access
+CREATE LOGIN UserAuthLambda WITH PASSWORD = '<INSERT PASSWORD>';
+CREATE LOGIN UserAuthInsertLambda WITH PASSWORD = '<INSERT PASSWORD>'
+
+-- Create a user associated with the login and assign to the role
+CREATE USER UserAuthLambdaClient FOR LOGIN UserAuthLambda;
+ALTER ROLE UserAuthVerify ADD MEMBER UserAuthLambdaClient;
+
+CREATE USER UserAuthInsertLambdaClient FOR LOGIN UserAuthInsertLambda;
+ALTER ROLE UserAuthInsert ADD MEMBER UserAuthInsertLambdaClient;
